@@ -2,7 +2,6 @@ plugins {
     id("java-gradle-plugin")
     id("kotlin")
     id("maven-publish")
-
 }
 
 group = "com.edwardstock"
@@ -49,6 +48,18 @@ publishing {
         }
     }
     repositories {
-        mavenLocal()
+        if(project.hasProperty("github.user") && project.hasProperty("github.token")) {
+            maven {
+                name = "Github"
+                url = uri("https://maven.pkg.github.com/edwardstock/gradle-cmakebuild")
+                credentials {
+                    username = project.findProperty("github.user") as String
+                    password = project.findProperty("github.token") as String
+
+                }
+            }
+        } else {
+            mavenLocal()
+        }
     }
 }
