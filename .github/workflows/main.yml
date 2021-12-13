@@ -22,5 +22,5 @@ jobs:
         run: chmod +x gradlew
       - name: Build with Gradle
         run: ./gradlew build
-      - name: Publish
-        run: ./gradlew publishAllPublicationsToGithubRepository -Pgithub.token=${{github.token}} -Pgithub.user=edwardstock
+#      - name: Publish
+#        run: ./gradlew publishAllPublicationsToGithubRepository -Pgithub.token=${{github.token}} -Pgithub.user=edwardstock
