@@ -36,12 +36,27 @@ plugins {
 }
 
 // Simple configuration requires only path to cmake project directory
-// Plugin adding task named buildCMake
+// Plugin adds a task named buildCMake
 cmakeBuild {
+    // you can switch off native build by pass boolean
+    enable = project.property("enable_native_build") == "1"
     path = rootProject.file("my-cmake-project-dir")
+    // cmake's CMAKE_BUILD_TYPE
+    buildType = "Debug"
+    
+    
+    allOS {
+        // configure:
+        // cFlags, cppFlags and arguments for all OS
+    }
+    
+    // also you can specify configuration for:
+    windows {}
+    macos {}
+    linux {}
 }
 
-// Set Jar-generation tasls depends on cmake project to make ability attach libs to jar
+// Set Jar-generation tasks depends on cmake project to make ability attach libs to jar
 tasks.withType<Jar> {
     // exclude adding generated libs to javadoc and sources jar files
     if (archiveClassifier.get() != "sources" && archiveClassifier.get() != "javadoc") {
@@ -51,15 +66,22 @@ tasks.withType<Jar> {
     }
 }
 
-// Also to run local test with JNI-bindings, use Test task
+// Also, to run local test with JNI-bindings, use Test task
 tasks.withType<Test> {
     val arch = when (System.getProperty("os.arch")) {
         "x86_64",
         "amd64" -> "x86_64"
         else -> System.getProperty("os.arch")
     }
-    allJvmArgs = allJvmArgs + listOf(
-        "-Djava.library.path=${project.buildDir}/.cxx/${arch}"
-    )
+    allJvmArgs = if(cmakeBuild.isWindows) {
+        allJvmArgs + listOf(
+            // windows MSVC puts artifacts to configuration-specific dir
+            "-Djava.library.path=${project.buildDir}/.cxx/${arch}/${cmakeBuild.buildType}"
+        )
+    } else {
+        allJvmArgs + listOf(
+            "-Djava.library.path=${project.buildDir}/.cxx/${arch}"
+        )
+    }
 }
 ```

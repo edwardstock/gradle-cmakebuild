@@ -16,6 +16,10 @@ gradlePlugin {
     }
 }
 
+dependencies {
+    implementation(gradleApi())
+}
+
 publishing {
     publications {
         create<MavenPublication>("release") {
@@ -48,18 +52,10 @@ publishing {
         }
     }
     repositories {
-        if(project.hasProperty("github.user") && project.hasProperty("github.token")) {
-            maven {
-                name = "Github"
-                url = uri("https://maven.pkg.github.com/edwardstock/gradle-cmakebuild")
-                credentials {
-                    username = project.findProperty("github.user") as String
-                    password = project.findProperty("github.token") as String
-
-                }
-            }
-        } else {
-            mavenLocal()
-        }
+        mavenLocal()
     }
+}
+
+project.tasks.withType<PublishToMavenLocal> {
+    dependsOn("publishAllPublicationsToMavenLocalRepository")
 }

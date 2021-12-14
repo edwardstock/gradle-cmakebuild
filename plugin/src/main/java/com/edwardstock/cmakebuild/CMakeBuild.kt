@@ -3,158 +3,118 @@ package com.edwardstock.cmakebuild
 import org.gradle.api.DefaultTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.tasks.InputDirectory
-import org.gradle.api.tasks.OutputDirectory
-import java.io.BufferedReader
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.io.PrintStream
-import java.util.concurrent.TimeUnit
-
-abstract class CMakeBuildConfig {
-    var cmakeBin: String? = null
-
-    /**
-     * CMake project directory
-     * For example: ${project.projectDir}/path/to/mylibrary
-     */
-    @InputDirectory
-    var path: File? = null
-
-    /**
-     * List of ABIs to build. Now only supported system-only toolchain. Cross-compilation does not work yet
-     */
-    var abis: MutableList<String> = mutableListOf()
-    var arguments: MutableList<String> = mutableListOf()
-    var cppFlags: MutableList<String> = mutableListOf()
-    var cFlags: MutableList<String> = mutableListOf()
-    var buildType: String? = "Debug"
-    var debug: Boolean = true
-}
 
 class CMakeBuild : Plugin<Project> {
-
-    private fun List<String>.runCommand(
-        workingDir: File = File("."),
-        timeoutAmount: Long = 60,
-        timeoutUnit: TimeUnit = TimeUnit.SECONDS
-    ): String? = runCatching {
-        ProcessBuilder(this)
-            .directory(workingDir)
-            .redirectOutput(ProcessBuilder.Redirect.PIPE)
-            .redirectError(ProcessBuilder.Redirect.PIPE)
-            .start().also { it.waitFor(timeoutAmount, timeoutUnit) }
-            .inputStream.bufferedReader().readText()
-    }.onFailure { throw it }.getOrNull()
-
-    private fun List<String>.execCommand(
-        workingDir: File = File("."),
-        timeoutAmount: Long = 60,
-        timeoutUnit: TimeUnit = TimeUnit.SECONDS
-    ) {
-        val processBuilder = ProcessBuilder(this)
-            .directory(workingDir)
-            .redirectErrorStream(true)
-        val process = processBuilder.start()
-        val thread = Thread(processReader(process.inputStream))
-        thread.start()
-        process.waitFor(timeoutAmount, timeoutUnit)
-        thread.join()
-        if (process.exitValue() != 0) {
-            throw CMakeException("Unable to execute process: exit code ${process.exitValue()}. See log for details.")
-        }
+    companion object {
+        private var CACHE_CMAKE_BIN: String? = null
     }
 
-
-    private fun findCMakeBin(): String {
-        val path = listOf("which", "cmake").runCommand()
-        if (path.isNullOrBlank()) {
-            throw CMakeException("Unable to find cmake binary")
-        }
-        return path.trim()
-    }
-
-    private fun processReader(stream: InputStream, output: PrintStream = System.out) = Runnable {
-        val br = BufferedReader(InputStreamReader(stream))
-        var line: String?
-        try {
-            while (br.readLine().also { line = it } != null) {
-                line?.let {
-                    output.println(String.format("[CMake] %s", it))
-                }
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
+    private fun String.normalizePath(): String {
+        return if (isNotWindows()) {
+            this
+        } else {
+            this.replace("\\", "/")
         }
     }
 
     override fun apply(target: Project) {
-        val ext = target.extensions.create("cmakeBuild", CMakeBuildConfig::class.java)
+        val config = target.extensions.create("cmakeBuild", CMakeBuildConfig::class.java)
 
-        target.tasks.register("buildCMake", DefaultTask::class.java) { task ->
-            task.group = "build"
-
-            if (ext.cmakeBin == null) {
-                ext.cmakeBin = findCMakeBin()
-            }
-
-            if (ext.abis.isEmpty()) {
-                ext.abis += mutableListOf("x86_64")
-            }
-
-            if (ext.path == null) {
-                throw CMakeException("cmakeBuild.path must be set")
-            }
-
-            if (ext.buildType == null) {
-                ext.buildType = "Debug"
-            }
-
-            ext.arguments += listOf(
-                "-B${target.buildDir}/cmake",
-                "-S${ext.path!!.absolutePath}",
-                "-DCMAKE_BUILD_TYPE=${ext.buildType}",
-            )
-
-            task.inputs.dir(ext.path!!)
-            task.outputs.dir("${target.buildDir}/.cxx/")
-
-            task.doFirst {
-                for (abi in ext.abis) {
-                    val validAbi = when (abi) {
-                        "x86" -> abi
-                        "amd64",
-                        "x86_64",
-                        "x86-64" -> "x86_64"
-                        else -> throw CMakeException("Unsupported ABI $abi")
-                    }
-
-                    configure(validAbi, target, ext)
-                    build(target, ext)
-                }
-            }
+        target.tasks.register("buildCMake", DefaultTask::class.java) {
+            action(it, target, config)
         }
     }
 
-    private fun build(project: Project, config: CMakeBuildConfig) {
-        val configureDir = "${project.buildDir}/cmake"
+    private fun CMakeBuildConfig.setup() {
+        // finding cmake in windows may take some time, so cache value for subsequent usage
+        CACHE_CMAKE_BIN?.let {
+            println("Getting cmake bin from cache")
+            cmakeBin = it
+        }
 
-        val buildArgs = listOf(
-            config.cmakeBin!!,
-            "--build", configureDir,
-            "--target", "all"
+        if (cmakeBin == null) {
+            cmakeBin = findCMakeBin().also { CACHE_CMAKE_BIN = it }
+        }
+
+        if (abis.isEmpty()) {
+            abis += mutableListOf("x86_64")
+        }
+
+        if (path == null) {
+            throw CMakeException("cmakeBuild.path must be set")
+        }
+    }
+
+    private fun action(task: DefaultTask, target: Project, config: CMakeBuildConfig) {
+        task.group = "build"
+
+        if (!config.enable) {
+            return
+        }
+
+        config.setup()
+
+        val buildDir = config.stagingPath?.canonicalPath ?: listOf(target.buildDir.canonicalPath, "cmake").toOsPath()
+        val srcDir =
+            config.path?.canonicalPath ?: throw IllegalStateException("CMake project path is null")
+        val outputsDir = listOf(target.buildDir.canonicalPath, ".cxx").toOsPath()
+
+        val allOpts: OsSpecificOpts = config.allOpts
+
+        allOpts.arguments += listOf(
+            "-B${buildDir.normalizePath()}",
+            "-S${srcDir.normalizePath()}",
         )
-        if(config.debug) {
-            println("Build args: $buildArgs")
+        allOpts.definitions["CMAKE_BUILD_TYPE"] = config.buildType
+
+        task.inputs.dir(srcDir)
+        task.outputs.dir(outputsDir)
+
+        for (abi in config.abis) {
+            val validAbi = when (abi) {
+                "x86" -> abi
+                "x86_64" -> abi
+                "amd64",
+                "x86-64" -> "x86_64"
+                else -> throw CMakeException("Unsupported ABI $abi")
+            }
+
+            configure(validAbi, allOpts, config, outputsDir)
         }
 
-
-        buildArgs.execCommand()
+        task.doFirst {
+            for (abi in config.abis) {
+                build(config, buildDir)
+            }
+        }
     }
 
-    private fun configure(abi: String, project: Project, config: CMakeBuildConfig) {
+    private fun MutableMap<String, String>.setIfEmpty(key: String, value: String) {
+        if (!containsKey(key)) {
+            this[key] = value
+        }
+    }
+
+    private fun MutableMap<String, String>.append(key: String, value: String) {
+        if (containsKey(key)) {
+            this[key] += " $value"
+        } else {
+            this[key] = value
+        }
+    }
+
+    private fun OsSpecificOpts.getArgs(): List<String> {
+        return this.arguments + this.definitions.map {
+            "-D${it.key}=${it.value}"
+        }
+    }
+
+    private fun configure(
+        abi: String,
+        opts: OsSpecificOpts,
+        config: CMakeBuildConfig,
+        outputsDir: String
+    ) {
         /**
          * TODO: add support for cross-compilation, at least in UNIX platforms with gcc/clang
          */
@@ -164,25 +124,48 @@ class CMakeBuild : Plugin<Project> {
             else -> throw CMakeException("Unsupported ABI $abi")
         }
 
-        val buildDir = "${project.buildDir}/.cxx/${abi}"
+        val artifactsDir = listOf(outputsDir, abi).toOsPath().normalizePath()
 
-        val configureArgs: MutableList<String> = mutableListOf(
-            config.cmakeBin!!,
-            "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$buildDir",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$buildDir",
-            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$buildDir",
-        )
-        configureArgs += config.arguments
+        // do not override user-defined output dir
+        opts.definitions.setIfEmpty("CMAKE_ARCHIVE_OUTPUT_DIRECTORY", artifactsDir.normalizePath())
+        opts.definitions.setIfEmpty("CMAKE_LIBRARY_OUTPUT_DIRECTORY", artifactsDir.normalizePath())
+        opts.definitions.setIfEmpty("CMAKE_RUNTIME_OUTPUT_DIRECTORY", artifactsDir.normalizePath())
 
-        configureArgs += "-DCMAKE_C_FLAGS=${config.cFlags.joinToString { " " }} $crossFlag"
-        configureArgs += "-DCMAKE_CXX_FLAGS=${config.cppFlags.joinToString { " " }} $crossFlag"
-
-
-        if(config.debug) {
-            println("Configure args: $configureArgs")
+        if (isNotWindows()) {
+            opts.cFlags += crossFlag
+            opts.cppFlags += crossFlag
         }
 
-        configureArgs.execCommand()
+        if (opts.cFlags.isNotEmpty()) {
+            opts.definitions.append("CMAKE_C_FLAGS", opts.cFlagsMerged)
+        }
+
+        if (opts.cppFlags.isNotEmpty()) {
+            opts.definitions.append("CMAKE_CXX_FLAGS", opts.cppFlagsMerged)
+        }
+
+        val process = ProcessRunner(config.cmakeBin!!)
+        process.addArgs(opts.getArgs())
+
+        if (config.debug) {
+            println("Configure args: ${process.getCommand()}")
+        }
+        process()
     }
+
+    private fun build(config: CMakeBuildConfig, buildDir: String) {
+        val process = ProcessRunner(config.cmakeBin!!)
+        process.addArgs("--build", buildDir)
+        if (isNotWindows()) {
+            process.addArgs("--target", "all")
+        }
+
+        if (config.debug) {
+            println("Build args: ${process.getCommand()}")
+        }
+        process()
+    }
+
+
 
 }
