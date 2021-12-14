@@ -1,5 +1,7 @@
 # gradle-cmakebuild
 
+[![Release](https://jitpack.io/v/com.edwardstock/gradle-cmakebuild.svg)](https://jitpack.io/#com.edwardstock/gradle-cmakebuild) ![common build](https://github.com/edwardstock/gradle-cmakebuild/actions/workflows/main.yml/badge.svg)
+
 ## Gradle plugin helps to build CMake project
 
 ### Usage
@@ -9,10 +11,10 @@
 ```kotlin
 buildscript {
     repositories {
-        //todo
+        maven(url = uri("https://jitpack.io"))
     }
     dependencies {
-        classpath("com.edwardstock:cmakebuild:0.1.0")
+        classpath("com.edwardstock:gradle-cmakebuild:0.2.0")
     }
 }
 ```
@@ -41,24 +43,29 @@ cmakeBuild {
     // you can switch off native build by pass boolean
     enable = project.property("enable_native_build") == "1"
     path = rootProject.file("my-cmake-project-dir")
+
+    /* set specific cmake build directory, by default it uses ${project}/build/cmake
+    stagingPath = project.buildDir
+     */
+
     // cmake's CMAKE_BUILD_TYPE
     buildType = "Debug"
     // common cmake arguments
     arguments += listOf(
         "-DMY_OPTION=1"
     )
-    // also, you can specify cmake configure time definitions by special variable
+    // specify cmake configure time definitions by special variable
     definitions["MY_OPTION"] = "1"
-    // also you can override previously setup
     definitions["CMAKE_BUILD_TYPE"] = "Debug"
 
 
+    // set configuration for all OS:
     allOS {
         // configure:
-        // cFlags, cppFlags and arguments for all OS
+        // cFlags, cppFlags, arguments or definitions for all OS
     }
 
-    // also you can specify configuration for:
+    // set configuration for specific OS:
     windows {}
     macos {}
     linux {}
