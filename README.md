@@ -43,13 +43,21 @@ cmakeBuild {
     path = rootProject.file("my-cmake-project-dir")
     // cmake's CMAKE_BUILD_TYPE
     buildType = "Debug"
-    
-    
+    // common cmake arguments
+    arguments += listOf(
+        "-DMY_OPTION=1"
+    )
+    // also, you can specify cmake configure time definitions by special variable
+    definitions["MY_OPTION"] = "1"
+    // also you can override previously setup
+    definitions["CMAKE_BUILD_TYPE"] = "Debug"
+
+
     allOS {
         // configure:
         // cFlags, cppFlags and arguments for all OS
     }
-    
+
     // also you can specify configuration for:
     windows {}
     macos {}
