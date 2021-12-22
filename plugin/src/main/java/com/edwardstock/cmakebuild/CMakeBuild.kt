@@ -70,19 +70,21 @@ class CMakeBuild : Plugin<Project> {
         task.inputs.dir(srcDir)
         task.outputs.dir(outputsDir)
 
-        for (abi in config.abis) {
-            val validAbi = when (abi) {
-                "x86" -> abi
-                "x86_64" -> abi
-                "amd64",
-                "x86-64" -> "x86_64"
-                else -> throw CMakeException("Unsupported ABI $abi")
-            }
+        task.doFirst {
+            for (abi in config.abis) {
+                val validAbi = when (abi) {
+                    "x86" -> abi
+                    "x86_64" -> abi
+                    "amd64",
+                    "x86-64" -> "x86_64"
+                    else -> throw CMakeException("Unsupported ABI $abi")
+                }
 
-            configure(validAbi, allOpts, config, outputsDir)
+                configure(validAbi, allOpts, config, outputsDir)
+            }
         }
 
-        task.doFirst {
+        task.doLast() {
             for (abi in config.abis) {
                 build(config, buildDir)
             }
