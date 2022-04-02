@@ -2,10 +2,11 @@ plugins {
     id("java-gradle-plugin")
     id("kotlin")
     id("maven-publish")
+    id("signing")
 }
 
 group = "com.edwardstock"
-version = "0.2.1"
+version = "0.2.2"
 
 gradlePlugin {
     plugins {
@@ -32,9 +33,15 @@ publishing {
                 name.set(project.name)
                 url.set("https://github.com/edwardstock/gradle-cmakebuild")
                 inceptionYear.set("2021")
+                description.set("Gradle plugin helps to build CMake project")
+                scm {
+                    connection.set("scm:git:${pom.url}.git")
+                    developerConnection.set(connection)
+                    url.set(pom.url)
+                }
                 licenses {
                     license {
-                        name.set("MIT")
+                        name.set("The MIT License")
                         url.set("https://github.com/edwardstock/gradle-cmakebuild/blob/master/LICENSE")
                         distribution.set("repo")
                     }
@@ -53,9 +60,18 @@ publishing {
     }
     repositories {
         mavenLocal()
+        maven(url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")) {
+            credentials.username = findProperty("ossrhUsername") as String?
+            credentials.password = findProperty("ossrhPassword") as String?
+        }
     }
 }
 
 project.tasks.withType<PublishToMavenLocal> {
     dependsOn("publishAllPublicationsToMavenLocalRepository")
+}
+
+signing {
+    useGpgCmd()
+    sign(publishing.publications)
 }

@@ -14,7 +14,7 @@ buildscript {
         maven(url = uri("https://jitpack.io"))
     }
     dependencies {
-        classpath("com.edwardstock:gradle-cmakebuild:0.2.0")
+        classpath("com.edwardstock:gradle-cmakebuild:0.2.2")
     }
 }
 ```

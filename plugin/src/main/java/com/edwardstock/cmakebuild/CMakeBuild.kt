@@ -37,7 +37,7 @@ class CMakeBuild : Plugin<Project> {
         }
 
         if (abis.isEmpty()) {
-            abis += mutableListOf("x86_64")
+            abis += mutableListOf(System.getProperty("os.arch"))
         }
 
         if (path == null) {
@@ -77,6 +77,7 @@ class CMakeBuild : Plugin<Project> {
                     "x86_64" -> abi
                     "amd64",
                     "x86-64" -> "x86_64"
+                    "aarch64" -> "aarch64"
                     else -> throw CMakeException("Unsupported ABI $abi")
                 }
 

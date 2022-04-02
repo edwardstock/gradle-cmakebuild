@@ -54,8 +54,6 @@ internal fun findCMakeBin(): String {
             "cmake.exe"
         ).run()
 
-        println("RESULT of find cmake: ${result.stdout}")
-
         if (result.stdout.contains("\"")) {
             return result.stdout
                 .split("\n")
