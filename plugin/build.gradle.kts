@@ -17,6 +17,32 @@ gradlePlugin {
     }
 }
 
+tasks.register<Javadoc>("pluginJavadoc") {
+    group = "publishing"
+    isFailOnError = false
+    source = sourceSets["main"].allSource
+    classpath += sourceSets["main"].compileClasspath
+}
+
+tasks.register<Jar>("sourcesJar") {
+    dependsOn("classes")
+    archiveClassifier.set("sources")
+    group = "publishing"
+    from(sourceSets.getByName("main").allSource)
+}
+
+tasks.register<Jar>("javadocJar") {
+    dependsOn("pluginJavadoc")
+    archiveClassifier.set("javadoc")
+    group = "publishing"
+    from((tasks.findByName("javadoc") as Javadoc).destinationDir)
+}
+
+artifacts {
+    archives(tasks.getByName("sourcesJar"))
+    archives(tasks.getByName("javadocJar"))
+}
+
 dependencies {
     implementation(gradleApi())
 }
@@ -25,6 +51,8 @@ publishing {
     publications {
         create<MavenPublication>("release") {
             from(components.getByName("java"))
+            artifact(tasks.getByName("sourcesJar"))
+            artifact(tasks.getByName("javadocJar"))
             groupId = project.group as String
             artifactId = project.name
             version = project.version as String

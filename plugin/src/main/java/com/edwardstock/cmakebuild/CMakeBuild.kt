@@ -85,7 +85,7 @@ class CMakeBuild : Plugin<Project> {
             }
         }
 
-        task.doLast() {
+        task.doLast {
             for (abi in config.abis) {
                 build(config, buildDir)
             }
@@ -123,7 +123,8 @@ class CMakeBuild : Plugin<Project> {
          */
         val crossFlag = when (abi) {
             "x86" -> "-m32"
-            "x86_64" -> "-m64"
+            "x86_64",
+            "aarch64" -> "-m64"
             else -> throw CMakeException("Unsupported ABI $abi")
         }
 
@@ -168,7 +169,6 @@ class CMakeBuild : Plugin<Project> {
         }
         process()
     }
-
 
 
 }
