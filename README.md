@@ -1,40 +1,31 @@
 # gradle-cmakebuild
 
-[![Release](https://jitpack.io/v/com.edwardstock/gradle-cmakebuild.svg)](https://jitpack.io/#com.edwardstock/gradle-cmakebuild) ![common build](https://github.com/edwardstock/gradle-cmakebuild/actions/workflows/main.yml/badge.svg)
-
 ## Gradle plugin helps to build CMake project
 
 ### Usage
 
-1. Add to root build.gradle
+1. Version catalogs
 
-```kotlin
-buildscript {
-    repositories {
-        maven(url = uri("https://jitpack.io"))
-    }
-    dependencies {
-        classpath("com.edwardstock:gradle-cmakebuild:0.2.2")
-    }
-}
+```toml
+[plugins]
+cmake = { id = "com.edwardstock.cmakebuild", version = "0.3.0" } 
 ```
 
-2. Apply plugin
-
+2. Root build.gradle.kts
 ```kotlin
 plugins {
-    id("com.edwardstock.cmakebuild")
+    alias(libs.plugins.cmake) apply false
 }
 ```
 
-3. Configure
+3. Configure module build.gradle.kts
 
 ```kotlin
 plugins {
     `java-library`
     kotlin("jvm")
     id("maven-publish")
-    id("com.edwardstock.cmakebuild")
+    alias(libs.plugins.cmake) // apply cmake plugin
 }
 
 // Simple configuration requires only path to cmake project directory
@@ -48,7 +39,7 @@ cmakeBuild {
     stagingPath = project.buildDir
      */
 
-    // cmake's CMAKE_BUILD_TYPE
+    // cmake's --config Debug
     buildType = "Debug"
     // common cmake arguments
     arguments += listOf(
@@ -70,33 +61,54 @@ cmakeBuild {
     macos {}
     linux {}
 }
+```
 
-// Set Jar-generation tasks depends on cmake project to make ability attach libs to jar
-tasks.withType<Jar> {
-    // exclude adding generated libs to javadoc and sources jar files
-    if (archiveClassifier.get() != "sources" && archiveClassifier.get() != "javadoc") {
-        dependsOn("buildCMake")
-        // ${project.buildDir}/.cxx is a default location for cmake artifacts (archive, library and runtime)
-        from(file("${project.buildDir}/.cxx"))
-    }
+### Main Usage: Integration with SciJava
+
+A primary use case for this plugin is to build native libraries for use with the SciJava `native-lib-loader`. To enable this, set the
+`useScijavaLoaderTemplate` property to `true`. This will configure the build to output the native libraries in the directory structure expected by the
+SciJava loader.
+
+Here is a complete example of how to configure your build for SciJava:
+
+```kotlin
+import com.edwardstock.cmakebuild.getCMakeBuildPathHostSpecific
+import org.jetbrains.kotlin.gradle.tasks.ProcessResources
+
+plugins {
+    `java-library`
+    kotlin("jvm")
+    alias(libs.plugins.cmake)
 }
 
-// Also, to run local test with JNI-bindings, use Test task
-tasks.withType<Test> {
-    val arch = when (System.getProperty("os.arch")) {
-        "x86_64",
-        "amd64" -> "x86_64"
-        else -> System.getProperty("os.arch")
+cmakeBuild {
+    // Enable SciJava native-lib-loader integration
+    useScijavaLoaderTemplate = true
+    path = rootProject.file("native")
+    // ... other configurations
+}
+
+/**
+ * Include the CMake build output (native libs) into the JVM resources,
+ * so they get packaged into the JAR and are available at runtime.
+ */
+run {
+    val cmakeOutDir = providers.provider {
+        getCMakeBuildPathHostSpecific(cmakeBuild).parentFile.parentFile
     }
-    allJvmArgs = if(cmakeBuild.isWindows) {
-        allJvmArgs + listOf(
-            // windows MSVC puts artifacts to configuration-specific dir
-            "-Djava.library.path=${project.buildDir}/.cxx/${arch}/${cmakeBuild.buildType}"
-        )
-    } else {
-        allJvmArgs + listOf(
-            "-Djava.library.path=${project.buildDir}/.cxx/${arch}"
-        )
+
+    // Add to jvmMain resources
+    kotlin.sourceSets.named("jvmMain") {
+        resources.srcDir(cmakeOutDir)
+    }
+
+    tasks.named<ProcessResources>("jvmProcessResources").configure {
+        dependsOn("buildCMake")
+        inputs.dir(cmakeOutDir)
+    }
+
+    tasks.matching { it.name in setOf("jvmJar", "jar") }.configureEach {
+        dependsOn("jvmProcessResources")
     }
 }
 ```

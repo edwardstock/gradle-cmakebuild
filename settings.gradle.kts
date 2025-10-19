@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 rootProject.name = "cmakebuild"
 
 include(
@@ -9,6 +11,7 @@ project(":cmakebuild").projectDir = file("plugin")
 pluginManagement {
     repositories {
         mavenLocal()
+        gradlePluginPortal()
     }
 }
 

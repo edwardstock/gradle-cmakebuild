@@ -1,7 +1,5 @@
 package com.edwardstock.cmakebuild
 
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 data class ExecResult(
@@ -25,7 +23,16 @@ data class ExecResult(
             |stderr: $stderr
             |}""".trimMargin()
     }
+
+
+    fun throwIfFailed(prefix: String) {
+        if (!isOk()) {
+            print() // keep your printing behavior
+            throw CMakeException("$prefix: exitCode=$exitCode")
+        }
+    }
 }
+
 
 internal class ProcessRunner(
     private val program: String,
@@ -37,6 +44,14 @@ internal class ProcessRunner(
 
     operator fun invoke() {
         execCommand()
+    }
+
+    fun runWithTimeout(timeoutSeconds: Long): ExecResult {
+        return run(timeoutSeconds)
+    }
+
+    fun run(timeoutSeconds: Long = 60): ExecResult {
+        return runCommand(timeoutSeconds, TimeUnit.SECONDS)
     }
 
     fun run(): ExecResult {
@@ -75,6 +90,28 @@ internal class ProcessRunner(
 
     }
 
+    fun execStreaming(timeoutSeconds: Long, logger: org.gradle.api.logging.Logger) {
+        val pb = ProcessBuilder(listOf(program) + args)
+            .redirectErrorStream(true)
+        val p = pb.start()
+        val reader = p.inputStream.bufferedReader()
+        val t = Thread {
+            reader.useLines { lines ->
+                lines.forEach { logger.lifecycle("[CMake] $it") } // or logger.info(...)
+            }
+        }
+        t.start()
+        if (!p.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+            p.destroyForcibly()
+            t.join()
+            throw CMakeException("Process timed out: ${getCommand()}")
+        }
+        t.join()
+        if (p.exitValue() != 0) {
+            throw CMakeException("Process failed (${p.exitValue()}): ${getCommand()}")
+        }
+    }
+
     private fun List<String>.prepare(): List<String> {
         return (if (OsCheck.operatingSystemType == OsCheck.OSType.Windows) {
             (mutableListOf("cmd.exe", "/c") + listOf(program.escapeIfRequired()) + this)
@@ -87,53 +124,31 @@ internal class ProcessRunner(
         return args.prepare().joinToString(" ")
     }
 
+    private fun command(): List<String> = listOf(program) + args
+
     private fun runCommand(
         timeoutAmount: Long = 60,
         timeoutUnit: TimeUnit = TimeUnit.SECONDS
     ): ExecResult {
-        val p = ProcessBuilder(args.prepare().also {
-//            println("EXEC: \"${it.joinToString(" ")}\"")
-        })
-
+        val pb = ProcessBuilder(command())
             .redirectOutput(ProcessBuilder.Redirect.PIPE)
             .redirectError(ProcessBuilder.Redirect.PIPE)
-            .redirectErrorStream(false)
-            .start()
 
-        val sb = StringBuilder()
-        val sbError = StringBuilder()
-        var line: String?
-        BufferedReader(InputStreamReader(p.inputStream)).use { br ->
-            while (br.readLine().also { line = it } != null) {
-                line?.let {
-                    sb.append(it).append('\n')
-                }
-            }
+        val p = pb.start()
+        if (!p.waitFor(timeoutAmount, timeoutUnit)) {
+            p.destroyForcibly()
+            return ExecResult("", "Timed out: ${command().joinToString(" ")}", -1)
         }
-        line = null
-        BufferedReader(InputStreamReader(p.errorStream)).use { br ->
-            while (br.readLine().also { line = it } != null) {
-                line?.let {
-                    sbError.append(it).append('\n')
-                }
-            }
-        }
-
-        p.waitFor(timeoutAmount, timeoutUnit)
-        return ExecResult(
-            sb.toString(),
-            if (sbError.isEmpty()) null else sbError.toString(),
-            p.exitValue()
-        )
+        val out = p.inputStream.bufferedReader().readText()
+        val err = p.errorStream.bufferedReader().readText().ifBlank { null }
+        return ExecResult(out, err, p.exitValue())
     }
 
     private fun execCommand(
         timeoutAmount: Long = 60,
         timeoutUnit: TimeUnit = TimeUnit.SECONDS
     ) {
-        val processBuilder = ProcessBuilder(args.prepare().also {
-//            println("EXEC: \"${it.joinToString(" ")}\"")
-        })
+        val processBuilder = ProcessBuilder(args.prepare())
         val process = processBuilder.start()
         val threadStdout = Thread(processReader(process.inputStream, System.out))
         val threadStderr = Thread(processReader(process.errorStream, System.err))
