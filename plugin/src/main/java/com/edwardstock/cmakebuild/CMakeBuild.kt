@@ -18,6 +18,8 @@ class CMakeBuild : Plugin<Project> {
                 ext.validate()
             }
 
+            t.onlyIf { ext.enable.getOrElse(true) }
+
             t.group = "build"
             t.sourceDir.set(ext.path)
             t.buildDir.set(ext.stagingPath) // already has default convention
