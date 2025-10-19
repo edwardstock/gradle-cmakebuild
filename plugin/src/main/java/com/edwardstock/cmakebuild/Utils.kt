@@ -7,6 +7,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.PrintStream
+import java.security.MessageDigest
 import java.util.Locale
 
 internal fun String.escape(): String {
@@ -105,7 +106,7 @@ internal fun normalizeABI(abi: String): String = when (abi) {
     "x86_64" -> abi
     "amd64",
     "x86-64" -> "x86_64"
-
+    "arm64",
     "aarch64" -> "aarch64"
     else -> throw CMakeException("Unsupported ABI $abi")
 }
@@ -146,10 +147,15 @@ internal fun normalizeABIForScijavaLoader(abi: String): String {
             else -> throw CMakeException("Unsupported Linux ABI: $abi")
         }
 
-        else -> error("Unexpected OS: $os")
+        else -> throw CMakeException("Unexpected OS: $os")
     }
 
     return "natives/$osAndBitDepth"
+}
+
+internal fun String.sha256(): String {
+    val bytes = MessageDigest.getInstance("SHA-256").digest(this.toByteArray())
+    return bytes.joinToString("") { "%02x".format(it) }
 }
 
 fun Project.getCMakeBuildPath(): File {

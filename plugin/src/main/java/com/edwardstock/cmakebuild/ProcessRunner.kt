@@ -24,7 +24,7 @@ data class ExecResult(
     fun throwIfFailed(prefix: String) {
         if (!isOk()) {
             print()
-            throw CMakeException("$prefix: exitCode=$exitCode\n${this}")
+            throw CMakeException("$prefix: exitCode=$exitCode")
         }
     }
 }
@@ -78,6 +78,7 @@ internal class ProcessRunner(
     /**
      * Execute and stream output to the provided Gradle logger. Throws on timeout or non-zero exit.
      */
+    @Throws(CMakeException::class)
     fun execStreaming(timeout: Duration, logger: org.gradle.api.logging.Logger) {
         val pb = ProcessBuilder(listOf(program) + args)
             .redirectErrorStream(true)
@@ -110,11 +111,7 @@ internal class ProcessRunner(
     }
 
     private fun List<String>.prepare(): List<String> {
-//        return if (OsCheck.operatingSystemType == OsCheck.OSType.Windows) {
-//            (mutableListOf("cmd.exe", "/c") + listOf(program.escapeIfRequired()) + this)
-//        } else {
         return (listOf(program) + this)
-//        }
     }
 
     private fun getCommand(): String = args.prepare().joinToString(" ")
@@ -124,24 +121,68 @@ internal class ProcessRunner(
     private fun runCommand(
         timeout: Duration = 60.seconds
     ): ExecResult {
-        val pb = ProcessBuilder(command())
+        val cmd = command()
+        val cmdJoined = cmd.joinToString(" ")
+        val cmdHash = cmdJoined.sha256()
+
+        val pb = ProcessBuilder(cmd)
             .redirectOutput(ProcessBuilder.Redirect.PIPE)
             .redirectError(ProcessBuilder.Redirect.PIPE)
 
         val process = pb.start()
-        try {
+
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+
+        val stdoutThread = Thread(
+            {
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { stdout.append(it).appendLine() }
+                }
+            },
+            "runCommand-stdout-${cmdHash}"
+        ).apply { isDaemon = true }
+
+        val stderrThread = Thread(
+            {
+                process.errorStream.bufferedReader().useLines { lines ->
+                    lines.forEach { stderr.append(it).appendLine() }
+                }
+            },
+            "runCommand-stderr-${cmdHash}"
+        ).apply { isDaemon = true }
+
+        stdoutThread.start()
+        stderrThread.start()
+
+        return try {
             if (!process.waitFor(timeout.inWholeSeconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
-                return ExecResult("", "Timed out: ${command().joinToString(" ")}", -1)
+                stdoutThread.join()
+                stderrThread.join()
+                ExecResult("", "Timed out: $cmdJoined", -1)
+            } else {
+                stdoutThread.join()
+                stderrThread.join()
+                val out = stdout.toString()
+                val errText = stderr.toString().ifBlank { null }
+                ExecResult(out, errText, process.exitValue())
             }
-
-            val out = process.inputStream.bufferedReader().use { it.readText() }
-            val errText = process.errorStream.bufferedReader().use { it.readText() }.ifBlank { null }
-            return ExecResult(out, errText, process.exitValue())
         } catch (ie: InterruptedException) {
             process.destroyForcibly()
             Thread.currentThread().interrupt()
-            return ExecResult("", "Interrupted: ${command().joinToString(" ")}", -1)
+
+            try {
+                stdoutThread.join()
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            try {
+                stderrThread.join()
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            ExecResult("", "Interrupted: $cmdJoined", -1)
         }
     }
 
