@@ -90,10 +90,6 @@ abstract class CMakeBuildTask : DefaultTask() {
             val configureArgs = args + defs.map { (k, v) -> "-D$k=$v" }
             logger.lifecycle("Configure ABI=$abi:\n${listOf(cmake).plus(configureArgs).joinToString(" ")}")
 
-            ProcessRunner(cmake, configureArgs.toMutableList())
-                .runWithTimeout(timeoutSeconds.get())
-                .throwIfFailed("Configure failed for ABI=$abi")
-
             if (debug.get()) {
                 ProcessRunner(cmake, configureArgs.toMutableList())
                     .execStreaming(timeoutSeconds.get(), logger) // streams live
