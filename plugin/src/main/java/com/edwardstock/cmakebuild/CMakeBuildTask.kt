@@ -10,6 +10,7 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 
 abstract class CMakeBuildTask : DefaultTask() {
     // Inputs/outputs (wired from the extension in plugin.apply)
@@ -38,18 +39,12 @@ abstract class CMakeBuildTask : DefaultTask() {
     @get:Internal
     abstract val effectiveOpts: Property<OsSpecificOpts>
 
-    // Optional: timeout (seconds)
+    // Optional: timeout represented as serializable seconds for Gradle input fingerprinting
     @get:Input
-    abstract val timeoutSeconds: Property<Long>
+    abstract val processTimeoutSeconds: Property<Long>
 
     @get:Input
     abstract val useScijavaLoaderTemplate: Property<Boolean>
-
-    init {
-        // Sensible defaults
-        debug.convention(false)
-        timeoutSeconds.convention(1800L) // 30 minutes
-    }
 
     @TaskAction
     fun run() {
@@ -65,6 +60,8 @@ abstract class CMakeBuildTask : DefaultTask() {
         val args = (opts.arguments + listOf("-S$src", "-B$buildDir")).toMutableList()
         val defs = opts.definitions.toMutableMap()
 
+        val artifactDirs = mutableListOf<Pair<String, String>>()
+
         // Per-ABI configure
         abisVal.forEach { abi ->
             val artifactsSubDir = if (useScijavaLoaderTemplate.get()) {
@@ -73,7 +70,9 @@ abstract class CMakeBuildTask : DefaultTask() {
                 abi
             }
             val artifactsDir = listOf(outRoot, artifactsSubDir).toOsPath()
+            artifactDirs += artifactsDir to abi
 
+            defs.putIfAbsent("CMAKE_BUILD_TYPE", buildType)
             defs.putIfAbsent("CMAKE_ARCHIVE_OUTPUT_DIRECTORY", artifactsDir)
             defs.putIfAbsent("CMAKE_LIBRARY_OUTPUT_DIRECTORY", artifactsDir)
             defs.putIfAbsent("CMAKE_RUNTIME_OUTPUT_DIRECTORY", artifactsDir)
@@ -92,16 +91,13 @@ abstract class CMakeBuildTask : DefaultTask() {
 
             if (debug.get()) {
                 ProcessRunner(cmake, configureArgs.toMutableList())
-                    .execStreaming(timeoutSeconds.get(), logger) // streams live
+                    .execStreaming(processTimeoutSeconds.get().seconds, logger) // streams live
             } else {
                 ProcessRunner(cmake, configureArgs.toMutableList())
-                    .runWithTimeout(timeoutSeconds.get())
+                    .runWithTimeout(processTimeoutSeconds.get().seconds)
                     .throwIfFailed("Configure failed for ABI=$abi")
             }
-
-            logArtifacts(File(artifactsDir), abi)
         }
-
 
         val buildArgs = mutableListOf(
             "--build", buildDir,
@@ -112,11 +108,15 @@ abstract class CMakeBuildTask : DefaultTask() {
 
         if (debug.get()) {
             ProcessRunner(cmake, buildArgs)
-                .execStreaming(timeoutSeconds.get(), logger)
+                .execStreaming(processTimeoutSeconds.get().seconds, logger)
         } else {
             ProcessRunner(cmake, buildArgs)
-                .runWithTimeout(timeoutSeconds.get())
+                .runWithTimeout(processTimeoutSeconds.get().seconds)
                 .throwIfFailed("Build failed")
+        }
+
+        artifactDirs.forEach {
+            logArtifacts(File(it.first), it.second)
         }
     }
 

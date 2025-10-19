@@ -45,30 +45,30 @@ mavenPublishing {
 
     pom {
         val thisPom = this
-            name.set(project.name)
-            url.set("https://github.com/edwardstock/gradle-cmakebuild")
-            inceptionYear.set("2021")
-            description.set("Gradle plugin helps to build CMake project")
-            scm {
-                connection.set("scm:git:${thisPom.url.get()}.git")
-                developerConnection.set(connection)
-                url.set(thisPom.url)
-            }
-            licenses {
-                license {
-                    name.set("The MIT License")
-                    url.set("https://github.com/edwardstock/gradle-cmakebuild/blob/master/LICENSE")
-                    distribution.set("repo")
-                }
-            }
-            developers {
-                developer {
-                    id.set("edwardstock")
-                    name.set("Eduard Maximovich")
-                    email.set("edward.vstock@gmail.com")
-                    roles.add("owner")
-                    timezone.set("Europe/Moscow")
-                }
+        name.set(project.name)
+        url.set("https://github.com/edwardstock/gradle-cmakebuild")
+        inceptionYear.set("2021")
+        description.set("Gradle plugin helps to build CMake project")
+        scm {
+            connection.set("scm:git:${thisPom.url.get()}.git")
+            developerConnection.set(connection)
+            url.set(thisPom.url)
+        }
+        licenses {
+            license {
+                name.set("The MIT License")
+                url.set("https://github.com/edwardstock/gradle-cmakebuild/blob/master/LICENSE")
+                distribution.set("repo")
             }
         }
+        developers {
+            developer {
+                id.set("edwardstock")
+                name.set("Eduard Maximovich")
+                email.set("edward.vstock@gmail.com")
+                roles.add("owner")
+                timezone.set("Europe/Moscow")
+            }
+        }
+    }
 }

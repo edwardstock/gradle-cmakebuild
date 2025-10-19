@@ -9,6 +9,8 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.ProviderFactory
 import org.gradle.api.tasks.Nested
 import javax.inject.Inject
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 abstract class CMakeBuildConfig @Inject constructor(
 
@@ -38,7 +40,7 @@ abstract class CMakeBuildConfig @Inject constructor(
     abstract val buildType: Property<String>
     abstract val debug: Property<Boolean>
     abstract val enable: Property<Boolean>
-    abstract val timeoutSeconds: Property<Long>
+    abstract val processTimeout: Property<Duration>
 
     /**
      * If you use https://github.com/scijava/native-lib-loader
@@ -83,10 +85,13 @@ abstract class CMakeBuildConfig @Inject constructor(
     // --- Nested OS-specific options (Provider-friendly) ---
     @get:Nested
     abstract val defaultOpts: OsSpecificOptsConfig
+
     @get:Nested
     abstract val windowsOpts: OsSpecificOptsConfig
+
     @get:Nested
     abstract val macosOpts: OsSpecificOptsConfig
+
     @get:Nested
     abstract val linuxOpts: OsSpecificOptsConfig
 
@@ -98,7 +103,7 @@ abstract class CMakeBuildConfig @Inject constructor(
         buildType.convention("Debug")
         debug.convention(false)
         enable.convention(true)
-        timeoutSeconds.convention(1800L) // 30 minutes
+        processTimeout.convention(1800.seconds) // 30 minutes
         useScijavaLoaderTemplate.convention(false)
 
         // default build dir: build/cmake
@@ -117,7 +122,7 @@ abstract class CMakeBuildConfig @Inject constructor(
         linuxOpts.initDefaults(objects)
     }
 
-    // ---- DSL helpers (unchanged ergonomics) ----
+    // ---- DSL helpers ----
     fun allOS(acceptor: OsSpecificOptsConfig.() -> Unit) = defaultOpts.acceptor()
     fun windows(acceptor: OsSpecificOptsConfig.() -> Unit) = windowsOpts.acceptor()
     fun macos(acceptor: OsSpecificOptsConfig.() -> Unit) = macosOpts.acceptor()
@@ -131,7 +136,7 @@ abstract class CMakeBuildConfig @Inject constructor(
             OsCheck.OSType.MacOS -> macosOpts.asModel()
             OsCheck.OSType.Linux -> linuxOpts.asModel()
             else -> providers.provider { OsSpecificOpts() }
-    }
+        }
     val allOpts get() = commonOpts.zip(currentOsOpts) { a, b -> a + b }
 
     internal fun validate() {

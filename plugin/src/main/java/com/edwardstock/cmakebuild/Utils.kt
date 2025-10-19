@@ -111,10 +111,10 @@ internal fun normalizeABI(abi: String): String = when (abi) {
 }
 
 internal fun getCurrentOsName(): String {
-    val osName = org.gradle.internal.os.OperatingSystem.current()
-    val hostOs = when {
-        osName.isWindows -> "windows"
-        osName.isMacOsX -> "osx"
+    val osName = OsCheck.operatingSystemType
+    val hostOs = when (osName) {
+        OsCheck.OSType.Windows -> "windows"
+        OsCheck.OSType.MacOS -> "osx"
         else -> "linux"
     }
 
